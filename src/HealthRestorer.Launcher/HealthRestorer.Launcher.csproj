@@ -17,11 +17,12 @@
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <AssemblyTitle>Health Restorer</AssemblyTitle>
-    <Description>Автоматическое глубокое обслуживание, диагностика и восстановление Windows</Description>
+    <Description>Health Restorer — автор dsa_cat. Автоматическое глубокое обслуживание, диагностика и восстановление Windows</Description>
     <Company>dsa_cat_studio</Company>
     <Product>Health Restorer</Product>
     <Authors>dsa_cat</Authors>
     <Copyright>Copyright © 2026 dsa_cat</Copyright>
+    <Trademark>dsa_cat_studio</Trademark>
     <Version>1.2.0</Version>
     <AssemblyVersion>1.2.0.0</AssemblyVersion>
     <FileVersion>1.2.0.0</FileVersion>
