@@ -23,6 +23,7 @@ internal static class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.InputEncoding = System.Text.Encoding.UTF8;
+        Console.Title = "Health Restorer 1.2.0";
 
         try
         {
