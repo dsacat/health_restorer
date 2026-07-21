@@ -12,6 +12,7 @@ $LogPath = Join-Path $Root "health-restorer.log"
 $StateTextPath = Join-Path $Root "state.txt"
 $StateJsonPath = Join-Path $Root "state.json"
 $TaskName = "HealthRestorer-SecureDeletedData"
+$TaskPath = "\Microsoft\HealthRestorer\"
 $PowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $ResidueScript = Join-Path $Root "ProgramResidueCleanup.ps1"
 $ResidueSummaryPath = Join-Path $Root "program-residue-summary.json"
@@ -151,7 +152,7 @@ try {
         "SSD: TRIM/ReTrim issued; physical overwrite of every NAND block cannot be guaranteed."
     ) -ErrorAction SilentlyContinue
 
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Confirm:$false -ErrorAction SilentlyContinue
 } catch {
     Write-Log ("Secure cleanup failed: {0}" -f $_.Exception.Message)
     throw
