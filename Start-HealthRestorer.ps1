@@ -4,13 +4,15 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$root = Join-Path $env:ProgramData "HealthRestorer"
-$logPath = Join-Path $root "health-restorer.log"
-$taskName = "HealthRestorer-SecureDeletedData"
-$powerShellPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$mainScript = Join-Path $PSScriptRoot "HealthRestorer.ps1"
-$secureScript = Join-Path $PSScriptRoot "SecureDeletedData.ps1"
-$installedSecureScript = Join-Path $root "SecureDeletedData.ps1"
+$Root = Join-Path $env:ProgramData "HealthRestorer"
+$LogPath = Join-Path $Root "health-restorer.log"
+$TaskName = "HealthRestorer-SecureDeletedData"
+$PowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+$MainScript = Join-Path $PSScriptRoot "HealthRestorer.ps1"
+$SecureScript = Join-Path $PSScriptRoot "SecureDeletedData.ps1"
+$ResidueScript = Join-Path $PSScriptRoot "ProgramResidueCleanup.ps1"
+$InstalledSecureScript = Join-Path $Root "SecureDeletedData.ps1"
+$InstalledResidueScript = Join-Path $Root "ProgramResidueCleanup.ps1"
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -19,35 +21,30 @@ function Test-Administrator {
 }
 
 function Write-Log {
-    param([string]$Message)
-
-    New-Item -ItemType Directory -Path $root -Force | Out-Null
-    Add-Content -LiteralPath $logPath -Encoding UTF8 -Value (
-        "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Message
-    )
+    param([string]$Text)
+    New-Item -ItemType Directory -Path $Root -Force | Out-Null
+    Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value ("[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $Text)
 }
 
 if (-not (Test-Administrator)) {
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    Start-Process -FilePath $powerShellPath -Verb RunAs -ArgumentList $arguments
+    Start-Process -FilePath $PowerShell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     exit
 }
 
-if (-not (Test-Path $mainScript)) {
-    throw "HealthRestorer.ps1 was not found next to the launcher."
+foreach ($script in @($MainScript, $SecureScript, $ResidueScript)) {
+    if (-not (Test-Path -LiteralPath $script)) {
+        throw "Required script was not found: $script"
+    }
 }
 
-if (-not (Test-Path $secureScript)) {
-    throw "SecureDeletedData.ps1 was not found next to the launcher."
-}
+New-Item -ItemType Directory -Path $Root -Force | Out-Null
+Copy-Item -LiteralPath $SecureScript -Destination $InstalledSecureScript -Force
+Copy-Item -LiteralPath $ResidueScript -Destination $InstalledResidueScript -Force
 
-New-Item -ItemType Directory -Path $root -Force | Out-Null
-Copy-Item -LiteralPath $secureScript -Destination $installedSecureScript -Force
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-
-$action = New-ScheduledTaskAction -Execute $powerShellPath -Argument (
-    "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"{0}`" -Mode WaitAndClean" -f $installedSecureScript
+$action = New-ScheduledTaskAction -Execute $PowerShell -Argument (
+    "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"{0}`" -Mode WaitAndClean" -f $InstalledSecureScript
 )
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -59,24 +56,24 @@ $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Days 7)
 
 Register-ScheduledTask `
-    -TaskName $taskName `
+    -TaskName $TaskName `
     -Action $action `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
     -Force | Out-Null
 
-Write-Log "Secure deleted-data cleanup task registered."
+Write-Log "Program residue and deleted-data cleanup task registered."
 
 try {
-    & $powerShellPath `
+    & $PowerShell `
         -NoProfile `
         -ExecutionPolicy Bypass `
-        -File $mainScript `
+        -File $MainScript `
         -Mode Start
 }
 catch {
-    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Write-Log ("Main workflow failed to start: {0}" -f $_.Exception.Message)
     throw
 }
