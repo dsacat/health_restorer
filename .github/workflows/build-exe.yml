@@ -11,6 +11,16 @@ on:
       - "LICENSE.md"
       - "src/HealthRestorer.Launcher/**"
       - ".github/workflows/build-exe.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "HealthRestorer.ps1"
+      - "SecureDeletedData.ps1"
+      - "Start-HealthRestorer.ps1"
+      - "LICENSE.md"
+      - "src/HealthRestorer.Launcher/**"
+      - ".github/workflows/build-exe.yml"
   workflow_dispatch:
 
 permissions:
@@ -66,6 +76,7 @@ jobs:
               Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
 
       - name: Commit compiled EXE
+        if: github.event_name == 'push'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
