@@ -1,0 +1,88 @@
+name: Build Health Restorer EXE
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "HealthRestorer.ps1"
+      - "SecureDeletedData.ps1"
+      - "Start-HealthRestorer.ps1"
+      - "LICENSE.md"
+      - "src/HealthRestorer.Launcher/**"
+      - ".github/workflows/build-exe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish single-file Windows EXE
+        shell: pwsh
+        run: |
+          dotnet publish `
+            .\src\HealthRestorer.Launcher\HealthRestorer.Launcher.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -o .\dist
+
+      - name: Verify embedded EXE metadata
+        shell: pwsh
+        run: |
+          $exe = Get-Item .\dist\HealthRestorer.exe
+          $info = $exe.VersionInfo
+
+          if ($info.CompanyName -ne "dsa_cat_studio") {
+              throw "Unexpected CompanyName: $($info.CompanyName)"
+          }
+
+          if ($info.ProductName -ne "Health Restorer") {
+              throw "Unexpected ProductName: $($info.ProductName)"
+          }
+
+          if ($info.LegalCopyright -ne "Copyright © 2026 dsa_cat") {
+              throw "Unexpected copyright: $($info.LegalCopyright)"
+          }
+
+          if ($info.FileVersion -ne "1.1.0.0") {
+              throw "Unexpected FileVersion: $($info.FileVersion)"
+          }
+
+          Get-FileHash .\dist\HealthRestorer.exe -Algorithm SHA256 |
+              ForEach-Object { "$($_.Hash.ToLower())  HealthRestorer.exe" } |
+              Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
+
+      - name: Commit compiled EXE
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/HealthRestorer.exe dist/HealthRestorer.exe.sha256
+
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+              git commit -m "Build HealthRestorer.exe [skip ci]"
+              git push
+          }
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: HealthRestorer-win-x64
+          path: |
+            dist/HealthRestorer.exe
+            dist/HealthRestorer.exe.sha256
+          retention-days: 90
