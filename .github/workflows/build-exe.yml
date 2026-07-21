@@ -8,6 +8,7 @@ on:
       - "HealthRestorer.ps1"
       - "SecureDeletedData.ps1"
       - "ProgramResidueCleanup.ps1"
+      - "AutorunAudit.ps1"
       - "Start-HealthRestorer.ps1"
       - "LICENSE.md"
       - "src/HealthRestorer.Launcher/**"
@@ -15,18 +16,10 @@ on:
   pull_request:
     branches:
       - 1.2.0-dev
-    paths:
-      - "HealthRestorer.ps1"
-      - "SecureDeletedData.ps1"
-      - "ProgramResidueCleanup.ps1"
-      - "Start-HealthRestorer.ps1"
-      - "LICENSE.md"
-      - "src/HealthRestorer.Launcher/**"
-      - ".github/workflows/build-exe.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: health-restorer-exe-${{ github.ref }}
@@ -52,6 +45,7 @@ jobs:
               ".\HealthRestorer.ps1",
               ".\SecureDeletedData.ps1",
               ".\ProgramResidueCleanup.ps1",
+              ".\AutorunAudit.ps1",
               ".\Start-HealthRestorer.ps1"
           )
 
@@ -96,14 +90,49 @@ jobs:
               throw "Mandatory full scan is not placed between Offline Scan and maintenance."
           }
 
+          $autorun = Get-Content -LiteralPath ".\AutorunAudit.ps1" -Raw
+          foreach ($required in @(
+              'Win32_StartupCommand',
+              'Winlogon',
+              'AppInit',
+              'IFEO',
+              'ScheduledTask',
+              'AutoService',
+              'BootOrAutoDriver',
+              'WmiEventFilter',
+              'User Shell Folders'
+          )) {
+              if (-not $autorun.Contains($required)) {
+                  throw "Hidden autorun audit coverage is missing: $required"
+              }
+          }
+
           $residue = Get-Content -LiteralPath ".\ProgramResidueCleanup.ps1" -Raw
           if ($residue -notmatch 'Uninstall|Residue|остат') {
               throw "Program residue cleanup module is missing."
           }
 
           $secure = Get-Content -LiteralPath ".\SecureDeletedData.ps1" -Raw
-          if ($secure -notmatch 'cipher|ReTrim|Optimize-Volume') {
-              throw "Deleted-data cleanup module is missing."
+          foreach ($required in @(
+              'DriveType -in @(2, 3)',
+              'cipher.exe',
+              'Invoke-FreeSpaceOverwriteGeneric',
+              'ReTrim',
+              'deleted-data-summary.json'
+          )) {
+              if (-not $secure.Contains($required)) {
+                  throw "Deleted-data cleanup coverage is missing: $required"
+              }
+          }
+
+          $launcher = Get-Content -LiteralPath ".\Start-HealthRestorer.ps1" -Raw
+          if ($launcher -notmatch 'AutorunAudit\.ps1' -or $launcher -notmatch 'autorun-audit\.json') {
+              throw "Autorun audit is not connected to the launcher."
+          }
+
+          $project = Get-Content -LiteralPath ".\src\HealthRestorer.Launcher\HealthRestorer.Launcher.csproj" -Raw
+          if ($project -notmatch 'AutorunAudit\.ps1') {
+              throw "Autorun audit is not embedded in the EXE project."
           }
 
       - name: Publish single-file Windows EXE
@@ -146,10 +175,24 @@ jobs:
               ForEach-Object { "$($_.Hash.ToLower())  HealthRestorer.exe" } |
               Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
 
+      - name: Commit verified EXE to development branch
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/HealthRestorer.exe dist/HealthRestorer.exe.sha256
+
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+              git commit -m "Build verified HealthRestorer.exe [skip ci]"
+              git push origin HEAD:1.2.0-dev
+          }
+
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: HealthRestorer-win-x64-full-scan
+          name: HealthRestorer-win-x64-full-maintenance
           path: |
             dist/HealthRestorer.exe
             dist/HealthRestorer.exe.sha256
