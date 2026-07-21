@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>HealthRestorer</AssemblyName>
+    <RootNamespace>HealthRestorer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <AssemblyTitle>Health Restorer</AssemblyTitle>
+    <Description>Автоматическое глубокое обслуживание, диагностика и восстановление Windows</Description>
+    <Company>dsa_cat_studio</Company>
+    <Product>Health Restorer</Product>
+    <Authors>dsa_cat</Authors>
+    <Copyright>Copyright © 2026 dsa_cat</Copyright>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <InformationalVersion>1.1.0</InformationalVersion>
+    <RepositoryUrl>https://github.com/dsacat/health_restorer</RepositoryUrl>
+    <NeutralLanguage>ru-RU</NeutralLanguage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="../../HealthRestorer.ps1" Link="Embedded/HealthRestorer.ps1" LogicalName="HealthRestorer.Embedded.HealthRestorer.ps1" />
+    <EmbeddedResource Include="../../SecureDeletedData.ps1" Link="Embedded/SecureDeletedData.ps1" LogicalName="HealthRestorer.Embedded.SecureDeletedData.ps1" />
+    <EmbeddedResource Include="../../Start-HealthRestorer.ps1" Link="Embedded/Start-HealthRestorer.ps1" LogicalName="HealthRestorer.Embedded.Start-HealthRestorer.ps1" />
+    <EmbeddedResource Include="../../LICENSE.md" Link="Embedded/LICENSE.md" LogicalName="HealthRestorer.Embedded.LICENSE.md" />
+  </ItemGroup>
+</Project>
