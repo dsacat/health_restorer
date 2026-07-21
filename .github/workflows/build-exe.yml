@@ -3,7 +3,7 @@ name: Build Health Restorer EXE
 on:
   push:
     branches:
-      - main
+      - 1.2.0-dev
     paths:
       - "HealthRestorer.ps1"
       - "SecureDeletedData.ps1"
@@ -14,7 +14,7 @@ on:
       - ".github/workflows/build-exe.yml"
   pull_request:
     branches:
-      - main
+      - 1.2.0-dev
     paths:
       - "HealthRestorer.ps1"
       - "SecureDeletedData.ps1"
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: health-restorer-exe-${{ github.ref }}
@@ -45,7 +45,7 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Validate PowerShell syntax
+      - name: Validate PowerShell syntax and required stages
         shell: pwsh
         run: |
           $scripts = @(
@@ -74,6 +74,38 @@ jobs:
               throw ($messages -join "`n")
           }
 
+          $main = Get-Content -LiteralPath ".\HealthRestorer.ps1" -Raw
+          foreach ($required in @(
+              'Start-MpWDOScan',
+              'Invoke-FullDefenderScan',
+              '"-ScanType", "2"',
+              'Remove-MpPreference',
+              'Add-MpPreference',
+              'Clear-Junk',
+              'dism.exe',
+              'sfc.exe',
+              'chkdsk.exe',
+              'defrag.exe'
+          )) {
+              if (-not $main.Contains($required)) {
+                  throw "Required maintenance stage is missing: $required"
+              }
+          }
+
+          if ($main -notmatch '"AfterOffline"\s*\{\s*Invoke-FullDefenderScan\s+Disable-Startup') {
+              throw "Mandatory full scan is not placed between Offline Scan and maintenance."
+          }
+
+          $residue = Get-Content -LiteralPath ".\ProgramResidueCleanup.ps1" -Raw
+          if ($residue -notmatch 'Uninstall|Residue|остат') {
+              throw "Program residue cleanup module is missing."
+          }
+
+          $secure = Get-Content -LiteralPath ".\SecureDeletedData.ps1" -Raw
+          if ($secure -notmatch 'cipher|ReTrim|Optimize-Volume') {
+              throw "Deleted-data cleanup module is missing."
+          }
+
       - name: Publish single-file Windows EXE
         shell: pwsh
         run: |
@@ -84,7 +116,7 @@ jobs:
             --self-contained true `
             -o .\dist
 
-      - name: Verify embedded EXE metadata
+      - name: Verify EXE metadata and create checksum
         shell: pwsh
         run: |
           $exe = Get-Item .\dist\HealthRestorer.exe
@@ -114,24 +146,10 @@ jobs:
               ForEach-Object { "$($_.Hash.ToLower())  HealthRestorer.exe" } |
               Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
 
-      - name: Commit compiled EXE
-        if: github.event_name == 'push'
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/HealthRestorer.exe dist/HealthRestorer.exe.sha256
-
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-              git commit -m "Build HealthRestorer.exe [skip ci]"
-              git push
-          }
-
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: HealthRestorer-win-x64
+          name: HealthRestorer-win-x64-full-scan
           path: |
             dist/HealthRestorer.exe
             dist/HealthRestorer.exe.sha256
