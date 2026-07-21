@@ -101,6 +101,6 @@ C:\ProgramData\HealthRestorer\latest-backup.txt
 
 ## Лицензия
 
-Проект распространяется по лицензии `PolyForm Noncommercial License 1.0.0`. Коммерческое использование не разрешено.
+Проект распространяется по собственной лицензии `Health Restorer Non-Commercial License 1.0`. Коммерческое использование запрещено без отдельного письменного разрешения автора.
 
-Required Notice: Copyright 2026 dsa_cat
+Copyright © 2026 dsa_cat.
