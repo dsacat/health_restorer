@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $Root = Join-Path $env:ProgramData "HealthRestorer"
 $LogPath = Join-Path $Root "health-restorer.log"
 $TaskName = "HealthRestorer-SecureDeletedData"
+$TaskPath = "\Microsoft\HealthRestorer\"
 $PowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $MainScript = Join-Path $PSScriptRoot "HealthRestorer.ps1"
 $SecureScript = Join-Path $PSScriptRoot "SecureDeletedData.ps1"
@@ -41,7 +42,7 @@ New-Item -ItemType Directory -Path $Root -Force | Out-Null
 Copy-Item -LiteralPath $SecureScript -Destination $InstalledSecureScript -Force
 Copy-Item -LiteralPath $ResidueScript -Destination $InstalledResidueScript -Force
 
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Confirm:$false -ErrorAction SilentlyContinue
 
 $action = New-ScheduledTaskAction -Execute $PowerShell -Argument (
     "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"{0}`" -Mode WaitAndClean" -f $InstalledSecureScript
@@ -57,6 +58,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask `
     -TaskName $TaskName `
+    -TaskPath $TaskPath `
     -Action $action `
     -Trigger $trigger `
     -Principal $principal `
@@ -73,7 +75,7 @@ try {
         -Mode Start
 }
 catch {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Confirm:$false -ErrorAction SilentlyContinue
     Write-Log ("Main workflow failed to start: {0}" -f $_.Exception.Message)
     throw
 }
