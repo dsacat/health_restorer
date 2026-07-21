@@ -16,8 +16,8 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
-    <AssemblyTitle>Health Restorer</AssemblyTitle>
-    <Description>Health Restorer — автор dsa_cat. Автоматическое глубокое обслуживание, диагностика и восстановление Windows</Description>
+    <AssemblyTitle>Health Restorer — автор dsa_cat</AssemblyTitle>
+    <Description>Автоматическое глубокое обслуживание, диагностика и восстановление Windows</Description>
     <Company>dsa_cat_studio</Company>
     <Product>Health Restorer</Product>
     <Authors>dsa_cat</Authors>
