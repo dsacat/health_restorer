@@ -74,7 +74,13 @@ jobs:
           foreach ($required in @(
               'Start-MpWDOScan',
               'Invoke-FullDefenderScan',
-              '"-ScanType", "2"',
+              'Start-MpScan -ScanType FullScan',
+              'FullScanStartTime',
+              'FullScanEndTime',
+              'CONFIRMED: Microsoft Defender final full scan actually started',
+              'CleanupPending',
+              'FinalScanPending',
+              'FinalScanRunning',
               'Remove-MpPreference',
               'Add-MpPreference',
               'Clear-Junk',
@@ -88,8 +94,16 @@ jobs:
               }
           }
 
-          if ($main -notmatch '"AfterOffline"\s*\{\s*Invoke-FullDefenderScan\s+Disable-Startup') {
-              throw "Mandatory full scan is not placed between Offline Scan and maintenance."
+          if ($main -match '"AfterOffline"\s*\{[^}]*Invoke-FullDefenderScan') {
+              throw "Full scan must not run immediately after Offline Scan."
+          }
+
+          if ($main -notmatch '"FinalScanPending"\s*\{[^}]*Invoke-FullDefenderScan') {
+              throw "Full scan is not placed in the final stage."
+          }
+
+          if ($main -match 'Start-Workflow\s*\{[^}]*Register-ResumeTask') {
+              throw "Legacy resume task is still registered by the EXE workflow."
           }
 
           $controller = Get-Content -LiteralPath ".\ResumeController.ps1" -Raw
@@ -100,7 +114,10 @@ jobs:
               'Get-MpComputerStatus',
               'for ($attempt = 1; $attempt -le 12; $attempt++)',
               'HealthRestorer-progress.txt',
-              '-Mode", "Resume"'
+              '-Mode", "Resume"',
+              'CleanupPending',
+              'FinalScanPending',
+              'FinalScanRunning'
           )) {
               if (-not $controller.Contains($required)) {
                   throw "Resume-controller requirement is missing: $required"
@@ -131,6 +148,8 @@ jobs:
 
           $secure = Get-Content -LiteralPath ".\SecureDeletedData.ps1" -Raw
           foreach ($required in @(
+              'CleanupPending',
+              'FinalScanPending',
               'DriveType -in @(2, 3)',
               'cipher.exe',
               'Invoke-FreeSpaceOverwriteGeneric',
@@ -226,7 +245,7 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: HealthRestorer-win-x64-resume-controller
+          name: HealthRestorer-win-x64-final-confirmed-scan
           path: |
             dist/HealthRestorer.exe
             dist/HealthRestorer.exe.sha256
