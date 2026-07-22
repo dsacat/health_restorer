@@ -15,6 +15,7 @@ internal static class Program
             ["HealthRestorer.Embedded.SecureDeletedData.ps1"] = "SecureDeletedData.ps1",
             ["HealthRestorer.Embedded.ProgramResidueCleanup.ps1"] = "ProgramResidueCleanup.ps1",
             ["HealthRestorer.Embedded.AutorunAudit.ps1"] = "AutorunAudit.ps1",
+            ["HealthRestorer.Embedded.ResumeController.ps1"] = "ResumeController.ps1",
             ["HealthRestorer.Embedded.Start-HealthRestorer.ps1"] = "Start-HealthRestorer.ps1",
             ["HealthRestorer.Embedded.LICENSE.md"] = "LICENSE.md"
         };
