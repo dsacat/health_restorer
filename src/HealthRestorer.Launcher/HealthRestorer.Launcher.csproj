@@ -36,6 +36,7 @@
     <EmbeddedResource Include="../../SecureDeletedData.ps1" Link="Embedded/SecureDeletedData.ps1" LogicalName="HealthRestorer.Embedded.SecureDeletedData.ps1" />
     <EmbeddedResource Include="../../ProgramResidueCleanup.ps1" Link="Embedded/ProgramResidueCleanup.ps1" LogicalName="HealthRestorer.Embedded.ProgramResidueCleanup.ps1" />
     <EmbeddedResource Include="../../AutorunAudit.ps1" Link="Embedded/AutorunAudit.ps1" LogicalName="HealthRestorer.Embedded.AutorunAudit.ps1" />
+    <EmbeddedResource Include="../../ResumeController.ps1" Link="Embedded/ResumeController.ps1" LogicalName="HealthRestorer.Embedded.ResumeController.ps1" />
     <EmbeddedResource Include="../../Start-HealthRestorer.ps1" Link="Embedded/Start-HealthRestorer.ps1" LogicalName="HealthRestorer.Embedded.Start-HealthRestorer.ps1" />
     <EmbeddedResource Include="../../LICENSE.md" Link="Embedded/LICENSE.md" LogicalName="HealthRestorer.Embedded.LICENSE.md" />
   </ItemGroup>
