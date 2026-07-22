@@ -9,6 +9,7 @@ on:
       - "SecureDeletedData.ps1"
       - "ProgramResidueCleanup.ps1"
       - "AutorunAudit.ps1"
+      - "ResumeController.ps1"
       - "Start-HealthRestorer.ps1"
       - "LICENSE.md"
       - "src/HealthRestorer.Launcher/**"
@@ -46,6 +47,7 @@ jobs:
               ".\SecureDeletedData.ps1",
               ".\ProgramResidueCleanup.ps1",
               ".\AutorunAudit.ps1",
+              ".\ResumeController.ps1",
               ".\Start-HealthRestorer.ps1"
           )
 
@@ -90,6 +92,21 @@ jobs:
               throw "Mandatory full scan is not placed between Offline Scan and maintenance."
           }
 
+          $controller = Get-Content -LiteralPath ".\ResumeController.ps1" -Raw
+          foreach ($required in @(
+              'HealthRestorer-ResumeController',
+              'Stop-LegacyResumeTask',
+              'Wait-ForWindowsServices',
+              'Get-MpComputerStatus',
+              'for ($attempt = 1; $attempt -le 12; $attempt++)',
+              'HealthRestorer-progress.txt',
+              '-Mode", "Resume"'
+          )) {
+              if (-not $controller.Contains($required)) {
+                  throw "Resume-controller requirement is missing: $required"
+              }
+          }
+
           $autorun = Get-Content -LiteralPath ".\AutorunAudit.ps1" -Raw
           foreach ($required in @(
               'Win32_StartupCommand',
@@ -126,13 +143,30 @@ jobs:
           }
 
           $launcher = Get-Content -LiteralPath ".\Start-HealthRestorer.ps1" -Raw
-          if ($launcher -notmatch 'AutorunAudit\.ps1' -or $launcher -notmatch 'autorun-audit\.json') {
-              throw "Autorun audit is not connected to the launcher."
+          foreach ($required in @(
+              'ResumeController.ps1',
+              'HealthRestorer-ResumeController',
+              'New-ScheduledTaskTrigger -AtStartup',
+              'New-ScheduledTaskTrigger -AtLogOn',
+              '-RestartCount 12',
+              'AutorunAudit.ps1',
+              'autorun-audit.json'
+          )) {
+              if (-not $launcher.Contains($required)) {
+                  throw "Launcher continuation requirement is missing: $required"
+              }
           }
 
           $project = Get-Content -LiteralPath ".\src\HealthRestorer.Launcher\HealthRestorer.Launcher.csproj" -Raw
-          if ($project -notmatch 'AutorunAudit\.ps1') {
-              throw "Autorun audit is not embedded in the EXE project."
+          foreach ($required in @('AutorunAudit.ps1', 'ResumeController.ps1')) {
+              if (-not $project.Contains($required)) {
+                  throw "EXE embedded resource is missing: $required"
+              }
+          }
+
+          $program = Get-Content -LiteralPath ".\src\HealthRestorer.Launcher\Program.cs" -Raw
+          if (-not $program.Contains('HealthRestorer.Embedded.ResumeController.ps1')) {
+              throw "Resume controller is not extracted by the EXE launcher."
           }
 
       - name: Publish single-file Windows EXE
@@ -171,6 +205,12 @@ jobs:
               throw "Unexpected FileVersion: $($info.FileVersion)"
           }
 
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path .\dist\HealthRestorer.exe))
+          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+          if ($ascii -notmatch 'ResumeController\.ps1') {
+              throw "The compiled EXE does not contain the resume-controller resource name."
+          }
+
           Get-FileHash .\dist\HealthRestorer.exe -Algorithm SHA256 |
               ForEach-Object { "$($_.Hash.ToLower())  HealthRestorer.exe" } |
               Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
@@ -192,7 +232,7 @@ jobs:
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v7
         with:
-          name: HealthRestorer-win-x64-full-maintenance
+          name: HealthRestorer-win-x64-resume-controller
           path: |
             dist/HealthRestorer.exe
             dist/HealthRestorer.exe.sha256
