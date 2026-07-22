@@ -1,1 +1,1 @@
-Trigger the one-time final full-scan repair workflow.
+Trigger the one-time workflow that moves Defender Full Scan to the final stage and requires start/end confirmation.
