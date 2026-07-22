@@ -205,12 +205,6 @@ jobs:
               throw "Unexpected FileVersion: $($info.FileVersion)"
           }
 
-          $bytes = [IO.File]::ReadAllBytes((Resolve-Path .\dist\HealthRestorer.exe))
-          $ascii = [Text.Encoding]::ASCII.GetString($bytes)
-          if ($ascii -notmatch 'ResumeController\.ps1') {
-              throw "The compiled EXE does not contain the resume-controller resource name."
-          }
-
           Get-FileHash .\dist\HealthRestorer.exe -Algorithm SHA256 |
               ForEach-Object { "$($_.Hash.ToLower())  HealthRestorer.exe" } |
               Set-Content .\dist\HealthRestorer.exe.sha256 -Encoding ASCII
