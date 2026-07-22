@@ -125,13 +125,22 @@ function Get-StageDescription {
 
     switch ($State) {
         "AfterOffline" {
-            return "Running the mandatory full Microsoft Defender scan of all accessible files."
+            return "Preparing maintenance and the boot-time disk check. The full scan is deferred until the end."
         }
         "AfterDisk" {
             return "Running DISM, SFC, cache cleanup, disk checks and optimization."
         }
         "Maintenance" {
             return "Resuming interrupted Windows maintenance."
+        }
+        "CleanupPending" {
+            return "Removing program residues and clearing recoverable deleted-file data before the final full scan."
+        }
+        "FinalScanPending" {
+            return "Starting the final full Microsoft Defender scan after every cleanup stage."
+        }
+        "FinalScanRunning" {
+            return "The confirmed final full Microsoft Defender scan is running."
         }
         "Completed" {
             return "Main maintenance is complete. Final residue and deleted-data cleanup may still be running."
@@ -166,6 +175,15 @@ try {
                 -Details (Get-StageDescription -State $state)
             Remove-ControllerTask
             exit 0
+        }
+
+        if ($state -eq "CleanupPending") {
+            Write-Progress `
+                -Stage "CleanupPending" `
+                -Details (Get-StageDescription -State $state)
+            Start-Sleep -Seconds 60
+            $attempt--
+            continue
         }
 
         Write-Log ("Resume attempt {0}/12. Current state: {1}." -f $attempt, $state)

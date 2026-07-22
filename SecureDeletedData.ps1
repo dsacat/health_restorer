@@ -33,11 +33,11 @@ function Write-Log {
     )
 }
 
-function Test-MainWorkflowCompleted {
+function Test-MainWorkflowReadyForCleanup {
     if (Test-Path -LiteralPath $StateJsonPath) {
         try {
             $state = Get-Content -LiteralPath $StateJsonPath -Raw | ConvertFrom-Json
-            if ([string]$state.Stage -eq "Completed") {
+            if ([string]$state.Stage -eq "CleanupPending") {
                 return $true
             }
         }
@@ -48,7 +48,7 @@ function Test-MainWorkflowCompleted {
 
     if (Test-Path -LiteralPath $StateTextPath) {
         try {
-            if ((Get-Content -LiteralPath $StateTextPath -Raw).Trim() -eq "Completed") {
+            if ((Get-Content -LiteralPath $StateTextPath -Raw).Trim() -eq "CleanupPending") {
                 return $true
             }
         }
@@ -334,12 +334,12 @@ if (-not (Test-Administrator)) {
 
 try {
     if ($Mode -eq "WaitAndClean") {
-        Write-Log "Secure cleanup is waiting for the main workflow to complete."
+        Write-Log "Secure cleanup is waiting for main maintenance to reach CleanupPending."
         $deadline = (Get-Date).AddDays(31)
 
-        while (-not (Test-MainWorkflowCompleted)) {
+        while (-not (Test-MainWorkflowReadyForCleanup)) {
             if ((Get-Date) -ge $deadline) {
-                throw "The main workflow did not reach Completed state within 31 days."
+                throw "The main workflow did not reach CleanupPending state within 31 days."
             }
             Start-Sleep -Seconds 60
         }
@@ -350,25 +350,9 @@ try {
     $residue = Invoke-ProgramResidueCleanup
     $deletedData = @(Clear-DeletedData)
     Write-Log "Program residue and deleted-data cleanup completed."
+        Set-Content -LiteralPath $StateTextPath -Value "FinalScanPending" -Encoding ASCII
+        Write-Log "Final cleanup confirmed. State changed to FinalScanPending; the full scan can now run as the last stage."
 
-    $report = Join-Path $env:PUBLIC "Desktop\HealthRestorer-report.txt"
-    Add-Content -LiteralPath $report -Encoding UTF8 -Value @(
-        ""
-        "Program residue cleanup completed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
-        "Stale uninstall entries removed: $($residue.StaleUninstallEntries)"
-        "Orphaned program folders removed: $($residue.OrphanedProgramFolders)"
-        "Orphaned scheduled tasks removed: $($residue.OrphanedScheduledTasks)"
-        "Orphaned services removed: $($residue.OrphanedServices)"
-        "Broken shortcuts removed: $($residue.BrokenShortcuts)"
-        "Empty program directories removed: $($residue.EmptyDirectories)"
-        "Residue metadata backup: $($residue.BackupPath)"
-        ""
-        "Deleted-data cleanup completed: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
-        ($deletedData | Format-Table Drive, FileSystem, MediaKind, Method, Status -AutoSize | Out-String)
-        "HDD: accessible free space was overwritten."
-        "SSD/flash: TRIM/ReTrim was issued where supported; physical overwrite of every NAND block cannot be guaranteed."
-        "Locked, read-only, unmounted, disconnected, damaged, or unsupported volumes cannot be cleaned."
-    ) -ErrorAction SilentlyContinue
 
     Unregister-ScheduledTask `
         -TaskName $TaskName `

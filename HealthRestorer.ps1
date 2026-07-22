@@ -14,6 +14,8 @@ $LogPath = Join-Path $Root "health-restorer.log"
 $BackupPointer = Join-Path $Root "latest-backup.txt"
 $DefenderBackupPath = Join-Path $Root "defender-preferences-before-full-scan.json"
 $FullScanReportPath = Join-Path $Root "defender-full-scan-report.txt"
+$ProgramResidueSummaryPath = Join-Path $Root "program-residue-summary.json"
+$DeletedDataSummaryPath = Join-Path $Root "deleted-data-summary.json"
 $TaskName = "HealthRestorer-OneTime"
 $PowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 
@@ -527,6 +529,25 @@ function Set-DefenderBooleanPreference {
     Set-MpPreference @parameters
 }
 
+function Get-DefenderStatusDate {
+    param($Value)
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    try {
+        $date = [datetime]$Value
+        if ($date.Year -lt 2000) {
+            return $null
+        }
+        return $date
+    }
+    catch {
+        return $null
+    }
+}
+
 function Invoke-FullDefenderScan {
     $status = Get-MpComputerStatus -ErrorAction Stop
     if (-not $status.AntivirusEnabled) {
@@ -535,11 +556,11 @@ function Invoke-FullDefenderScan {
 
     try {
         Update-MpSignature -ErrorAction Stop
-        Write-Log "Defender signatures updated before full scan."
+        Write-Log "Defender signatures updated before final full scan."
     }
     catch {
         Write-Log (
-            "Defender signature update before full scan failed: {0}" -f `
+            "Defender signature update before final full scan failed: {0}" -f `
                 $_.Exception.Message
         )
     }
@@ -577,13 +598,17 @@ function Invoke-FullDefenderScan {
         ConvertTo-Json -Depth 8 |
         Set-Content -LiteralPath $DefenderBackupPath -Encoding UTF8
 
+    $stdoutPath = Join-Path $Root "defender-full-scan.stdout.log"
+    $stderrPath = Join-Path $Root "defender-full-scan.stderr.log"
+    Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
+
     try {
         foreach ($name in $savedOptions.Keys) {
             try {
                 Set-DefenderBooleanPreference `
                     -Name $name `
                     -Value ([bool]$desiredOptions[$name])
-                Write-Log ("Configured full-scan coverage: {0}" -f $name)
+                Write-Log ("Configured final full-scan coverage: {0}" -f $name)
             }
             catch {
                 Write-Log (
@@ -616,46 +641,154 @@ function Invoke-FullDefenderScan {
             }
         }
 
-        $mpCmdRun = Get-MpCmdRunPath
-        $started = Get-Date
-        Write-Log "Starting mandatory Defender full scan of all accessible files."
+        $before = Get-MpComputerStatus -ErrorAction Stop
+        $baselineStart = Get-DefenderStatusDate $before.FullScanStartTime
+        $baselineEnd = Get-DefenderStatusDate $before.FullScanEndTime
+        $requestedAt = Get-Date
 
+        Write-Log "Requesting final Microsoft Defender full scan. Waiting for Defender to confirm a new FullScanStartTime."
+
+        $scanCommand = '$ErrorActionPreference = "Stop"; Start-MpScan -ScanType FullScan -ErrorAction Stop'
+        $encodedCommand = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($scanCommand)
+        )
         $process = Start-Process `
-            -FilePath $mpCmdRun `
-            -ArgumentList @("-Scan", "-ScanType", "2", "-Timeout", "30") `
-            -Wait `
+            -FilePath $PowerShell `
+            -ArgumentList @(
+                "-NoProfile",
+                "-NonInteractive",
+                "-EncodedCommand", $encodedCommand
+            ) `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath `
             -PassThru `
             -WindowStyle Hidden
 
-        $finished = Get-Date
+        $confirmedStart = $null
+        $startDeadline = (Get-Date).AddMinutes(15)
+        while ((Get-Date) -lt $startDeadline) {
+            $current = Get-MpComputerStatus -ErrorAction Stop
+            $candidate = Get-DefenderStatusDate $current.FullScanStartTime
+
+            $isNewStart = $null -ne $candidate -and
+                ($null -eq $baselineStart -or $candidate -gt $baselineStart) -and
+                $candidate -ge $requestedAt.AddMinutes(-2)
+
+            if ($isNewStart) {
+                $confirmedStart = $candidate
+                break
+            }
+
+            if ($process.HasExited -and $process.ExitCode -ne 0) {
+                $errorText = if (Test-Path -LiteralPath $stderrPath) {
+                    Get-Content -LiteralPath $stderrPath -Raw
+                }
+                else {
+                    "No stderr output."
+                }
+                throw "Defender rejected the full-scan request. Exit code $($process.ExitCode). $errorText"
+            }
+
+            Start-Sleep -Seconds 5
+        }
+
+        if ($null -eq $confirmedStart) {
+            if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+            throw "Defender did not confirm a new full scan within 15 minutes. The log must not claim that scanning started."
+        }
+
+        Write-Log (
+            "CONFIRMED: Microsoft Defender final full scan actually started at {0}." -f `
+                $confirmedStart.ToString("yyyy-MM-dd HH:mm:ss")
+        )
+
+        $confirmedEnd = $null
+        $completionDeadline = (Get-Date).AddDays(7)
+        while ((Get-Date) -lt $completionDeadline) {
+            $current = Get-MpComputerStatus -ErrorAction Stop
+            $candidateEnd = Get-DefenderStatusDate $current.FullScanEndTime
+
+            if ($null -ne $candidateEnd -and $candidateEnd -ge $confirmedStart) {
+                $confirmedEnd = $candidateEnd
+                break
+            }
+
+            if ($process.HasExited -and $process.ExitCode -ne 0) {
+                $errorText = if (Test-Path -LiteralPath $stderrPath) {
+                    Get-Content -LiteralPath $stderrPath -Raw
+                }
+                else {
+                    "No stderr output."
+                }
+                throw "Confirmed full scan stopped with exit code $($process.ExitCode). $errorText"
+            }
+
+            Start-Sleep -Seconds 15
+        }
+
+        if ($null -eq $confirmedEnd) {
+            if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+            throw "Defender did not confirm FullScanEndTime within seven days."
+        }
+
+        if (-not $process.HasExited) {
+            $process.WaitForExit(60000) | Out-Null
+        }
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+
+        $exitCode = if ($process.HasExited) {
+            $process.ExitCode
+        }
+        else {
+            "terminated-after-confirmed-completion"
+        }
+        $outputText = if (Test-Path -LiteralPath $stdoutPath) {
+            Get-Content -LiteralPath $stdoutPath -Raw
+        }
+        else {
+            ""
+        }
+        $errorText = if (Test-Path -LiteralPath $stderrPath) {
+            Get-Content -LiteralPath $stderrPath -Raw
+        }
+        else {
+            ""
+        }
         $detections = Get-MpThreatDetection -ErrorAction SilentlyContinue |
             Select-Object `
                 -First 100 `
                 InitialDetectionTime, ThreatName, ActionSuccess, Resources
 
         @(
-            "Mandatory Microsoft Defender full scan"
-            "Started: $($started.ToString('yyyy-MM-dd HH:mm:ss'))"
-            "Finished: $($finished.ToString('yyyy-MM-dd HH:mm:ss'))"
-            "Duration: $(($finished - $started).ToString())"
-            "Exit code: $($process.ExitCode)"
+            "Confirmed final Microsoft Defender full scan"
+            "Requested: $($requestedAt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            "Confirmed start: $($confirmedStart.ToString('yyyy-MM-dd HH:mm:ss'))"
+            "Confirmed end: $($confirmedEnd.ToString('yyyy-MM-dd HH:mm:ss'))"
+            "Duration: $(($confirmedEnd - $confirmedStart).ToString())"
+            "Launcher exit code: $exitCode"
+            "Baseline start: $baselineStart"
+            "Baseline end: $baselineEnd"
+            ""
+            "Standard output:"
+            $outputText
+            ""
+            "Standard error:"
+            $errorText
             ""
             "Recent detections:"
             ($detections | Format-List | Out-String)
         ) | Set-Content -LiteralPath $FullScanReportPath -Encoding UTF8
 
-        if ($process.ExitCode -notin @(0, 2)) {
-            throw "Defender full scan failed with exit code $($process.ExitCode)."
-        }
-
-        if ($process.ExitCode -eq 2) {
-            Write-Log (
-                "Full scan completed with malware requiring attention or scan errors."
-            )
-        }
-        else {
-            Write-Log "Mandatory Defender full scan completed successfully."
-        }
+        Write-Log (
+            "CONFIRMED: Microsoft Defender final full scan completed at {0}." -f `
+                $confirmedEnd.ToString("yyyy-MM-dd HH:mm:ss")
+        )
     }
     finally {
         foreach ($kind in @("Path", "Extension", "Process")) {
@@ -742,7 +875,19 @@ function Write-Report {
     else {
         "Full scan report was not found."
     }
-    $threats = Get-MpThreatDetection -ErrorAction SilentlyContinue |
+    $residueSummary = if (Test-Path -LiteralPath $ProgramResidueSummaryPath) {
+            Get-Content -LiteralPath $ProgramResidueSummaryPath -Raw
+        }
+        else {
+            "Program residue summary was not found."
+        }
+        $deletedDataSummary = if (Test-Path -LiteralPath $DeletedDataSummaryPath) {
+            Get-Content -LiteralPath $DeletedDataSummaryPath -Raw
+        }
+        else {
+            "Deleted-data summary was not found."
+        }
+        $threats = Get-MpThreatDetection -ErrorAction SilentlyContinue |
         Select-Object `
             -First 100 `
             InitialDetectionTime, ThreatName, ActionSuccess, Resources
@@ -752,9 +897,15 @@ function Write-Report {
         "Log: $LogPath"
         "Startup backup: $backup"
         ""
-        $fullScan
-        ""
-        "Recent Microsoft Defender detections:"
+        "Program residue summary:"
+            $residueSummary
+            ""
+            "Deleted-data cleanup summary:"
+            $deletedDataSummary
+            ""
+            $fullScan
+            ""
+            "Recent Microsoft Defender detections:"
         ($threats | Format-List | Out-String)
     ) | Set-Content -LiteralPath $report -Encoding UTF8
 
@@ -764,7 +915,6 @@ function Write-Report {
 function Start-Workflow {
     New-Item -ItemType Directory -Path $Root -Force | Out-Null
     Copy-Item -LiteralPath $PSCommandPath -Destination $ScriptPath -Force
-    Register-ResumeTask
     Set-Content -LiteralPath $StatePath -Value "AfterOffline" -Encoding ASCII
 
     try {
@@ -805,30 +955,44 @@ function Resume-Workflow {
 
     switch ($state) {
         "AfterOffline" {
-            Invoke-FullDefenderScan
             Disable-Startup | Out-Null
             Set-Content -LiteralPath $StatePath -Value "AfterDisk" -Encoding ASCII
             Invoke-Native "chkntfs.exe" @("/c", $env:SystemDrive) | Out-Null
             Invoke-Native `
                 "fsutil.exe" `
                 @("dirty", "set", $env:SystemDrive) | Out-Null
-            Write-Log "Boot-time disk check scheduled."
+            Write-Log "Boot-time disk check scheduled. Full scan is intentionally deferred until every cleanup stage is finished."
             Restart-Computer -Force
         }
         "AfterDisk" {
             Set-Content -LiteralPath $StatePath -Value "Maintenance" -Encoding ASCII
             Repair-And-Optimize
-            Write-Report
-            Set-Content -LiteralPath $StatePath -Value "Completed" -Encoding ASCII
-            Remove-ResumeTask
-            Write-Log "All stages completed."
+            Set-Content -LiteralPath $StatePath -Value "CleanupPending" -Encoding ASCII
+            Write-Log "Main maintenance completed. Waiting for program-residue and deleted-data cleanup before the final full scan."
         }
         "Maintenance" {
             Repair-And-Optimize
+            Set-Content -LiteralPath $StatePath -Value "CleanupPending" -Encoding ASCII
+            Write-Log "Interrupted maintenance resumed. Waiting for final cleanup before the full scan."
+        }
+        "CleanupPending" {
+            Write-Log "Final cleanup is still running. Full scan has not started."
+        }
+        "FinalScanPending" {
+            Set-Content -LiteralPath $StatePath -Value "FinalScanRunning" -Encoding ASCII
+            Invoke-FullDefenderScan
             Write-Report
             Set-Content -LiteralPath $StatePath -Value "Completed" -Encoding ASCII
             Remove-ResumeTask
-            Write-Log "Interrupted maintenance resumed and completed."
+            Write-Log "All cleanup stages and the confirmed final full scan completed."
+        }
+        "FinalScanRunning" {
+            Write-Log "A previous final full scan was interrupted. Starting a new confirmed full scan."
+            Invoke-FullDefenderScan
+            Write-Report
+            Set-Content -LiteralPath $StatePath -Value "Completed" -Encoding ASCII
+            Remove-ResumeTask
+            Write-Log "Interrupted final full scan was repeated and completed."
         }
         "Completed" {
             Remove-ResumeTask
